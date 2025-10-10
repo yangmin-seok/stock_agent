@@ -1,0 +1,22 @@
+name: stock_env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pandas
+  - numpy
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - statsmodels
+  - sqlalchemy
+  - pip
+  - pip:
+      - yfinance
+      - pykrx
+      - mplfinance
+      - plotly
+      - tqdm
+      - prophet
+      - pymysql
