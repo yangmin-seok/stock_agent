@@ -4,6 +4,7 @@ import logging
 from src.fundamental.data_loader.crawler import get_top_companies, crawl_financial_year_data
 from src.fundamental.data_loader.db_util import get_db_connection, setup_database, save_financial_data
 from src.fundamental.data_loader.config import DB_CONFIG
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 로깅 설정: 진행 상황을 터미널에 출력
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,18 +29,41 @@ def update_financial_data():
 
     # 2. 각 기업의 재무 데이터 크롤링
     all_financial_data = []
-    for _, company in top_companies_df.iterrows():
-        company_dict = company.to_dict()
-        logger.info(f"🔍 '{company_dict['company_name']}'({company_dict['company_code']})의 연간 재무 데이터를 크롤링합니다...")
+    # for _, company in top_companies_df.iterrows():
+    #     company_dict = company.to_dict()
+    #     logger.info(f"🔍 '{company_dict['company_name']}'({company_dict['company_code']})의 연간 재무 데이터를 크롤링합니다...")
         
-        financial_df = crawl_financial_year_data(company_dict)
+    #     financial_df = crawl_financial_year_data(company_dict)
         
-        if financial_df is not None and not financial_df.empty:
-            # DataFrame을 딕셔너리 리스트로 변환하여 저장
-            all_financial_data.extend(financial_df.to_dict('records'))
-            logger.info(f"✅ '{company_dict['company_name']}' 데이터 처리 완료.")
-        else:
-            logger.warning(f"⚠️ '{company_dict['company_name']}'의 재무 데이터를 가져오지 못했습니다.")
+    #     if financial_df is not None and not financial_df.empty:
+    #         # DataFrame을 딕셔너리 리스트로 변환하여 저장
+    #         all_financial_data.extend(financial_df.to_dict('records'))
+    #         logger.info(f"✅ '{company_dict['company_name']}' 데이터 처리 완료.")
+    #     else:
+    #         logger.warning(f"⚠️ '{company_dict['company_name']}'의 재무 데이터를 가져오지 못했습니다.")
+    
+    # ThreadPoolExecutor를 사용하여 병렬 작업 실행
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        # 각 회사에 대한 크롤링 작업을 스케줄링하고 future 객체를 딕셔너리에 저장
+        future_to_company = {
+            executor.submit(crawl_financial_year_data, company.to_dict()): company.to_dict()
+            for _, company in top_companies_df.iterrows()
+        }
+
+        # 작업이 완료되는 순서대로 결과 처리
+        for future in as_completed(future_to_company):
+            company_dict = future_to_company[future]
+            company_name = company_dict['company_name']
+            
+            try:
+                financial_df = future.result() # 작업 결과 가져오기
+                if financial_df is not None and not financial_df.empty:
+                    all_financial_data.extend(financial_df.to_dict('records'))
+                    logger.info(f"✅ '{company_name}' 데이터 처리 완료.")
+                else:
+                    logger.warning(f"⚠️ '{company_name}'의 재무 데이터를 가져오지 못했습니다.")
+            except Exception as exc:
+                logger.error(f"❌ '{company_name}' 처리 중 오류 발생: {exc}")
 
     if not all_financial_data:
         logger.warning("크롤링된 재무 데이터가 없어 프로세스를 종료합니다.")

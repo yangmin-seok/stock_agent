@@ -20,7 +20,8 @@ def get_top_companies(limit: int = 200) -> pd.DataFrame:
         pd.DataFrame: 'company_name', 'company_code', 'exchange', 'market_cap' 컬럼을 포함한 데이터프레임
     """
 
-    today = datetime.now().strftime('%Y%d%m')
+    #today = datetime.now().strftime('%Y%d%m')
+    today = "20251010"
 
     try:
         # KOSPI 종목 정보
@@ -45,8 +46,13 @@ def get_top_companies(limit: int = 200) -> pd.DataFrame:
     # 종목명을 빠르게 추가합니다.
     df['company_name'] = df['company_code'].map(lambda x: stock.get_market_ticker_name(x))
 
+    # market_cap / 1억
+    df['market_cap'] = df['market_cap'].apply(lambda x: x // 100000000)
+
     # 최종적으로 필요한 컬럼만 선택하고 순서를 정리합니다.
-    df = df[['company_name', 'company_code', 'exchange']]
+    df = df[['company_name', 'company_code', 'exchange', 'market_cap']]
+
+    logger.info(f"✅ 시가총액 상위 {len(df)}개 종목 정보를 성공적으로 가져왔습니다.")
 
     return df
 
@@ -91,7 +97,7 @@ def crawl_financial_year_data(company: Dict[str, Any]) -> Optional[pd.DataFrame]
         df.columns = df.columns.droplevel(0)
         df.set_index(df.columns[0], inplace=True)
         df = df.loc[:, ~df.columns.str.contains('E')] # 예상(E) 데이터 컬럼 제외
-        df.columns = df.columns.str.replace(r'/12.*', '', regex=True) # '2020/12(IFRS...)' -> '2020'
+        df.columns = df.columns.str.replace(r'/.*', '', regex=True) # '2020/12(IFRS...)' -> '2020'
 
         # 3. Wide to Long 포맷으로 변환
         df_long = df.reset_index().melt(id_vars=df.index.name, var_name='year', value_name='value')
@@ -111,6 +117,7 @@ def crawl_financial_year_data(company: Dict[str, Any]) -> Optional[pd.DataFrame]
             '부채비율': 'debt_ratio',
             'EPS(원)': 'eps',
             'BPS(원)': 'bps',
+            '현금배당수익률': 'dividend_yield',
         }
         df_long['indicator'] = df_long[df.index.name].map(indicator_map)
         df_long = df_long.dropna(subset=['indicator'])
@@ -122,6 +129,7 @@ def crawl_financial_year_data(company: Dict[str, Any]) -> Optional[pd.DataFrame]
         df_pivot['company_code'] = company['company_code']
         df_pivot['company_name'] = company['company_name']
         df_pivot['exchange'] = company['exchange']
+        df_pivot['market_cap'] = company['market_cap']
         df_pivot['quarter_code'] = '0' # 연간 데이터
         
         # 7. 단위 변환 및 데이터 타입 정리

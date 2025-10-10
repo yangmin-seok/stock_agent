@@ -5,13 +5,13 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     company_code VARCHAR(10) NOT NULL,
     company_name VARCHAR(50) NOT NULL,
     exchange VARCHAR(10) NOT NULL CHECK (exchange IN ('KOSPI', 'KOSDAQ')),
-    year INTEGER NOT NULL,
+    year INTEGER ,
     quarter_code VARCHAR(10) NOT NULL CHECK (quarter_code IN ('0','1', '2', '3', '4')), -- 0: 연간, 1: 1분기, 2: 2분기, 3: 3분기, 4: 4분기
     -- 기초 정보 (Basic Info)
     market_cap INTEGER, -- 시가총액(억)
-    sales INTEGER NOT NULL, -- 매출액(억), 
-    operating_profit INTEGER NOT NULL, -- 영업이익(억)
-    net_income INTEGER NOT NULL, -- 당기순이익(억)
+    sales INTEGER, -- 매출액(억), 
+    operating_profit INTEGER, -- 영업이익(억)
+    net_income INTEGER, -- 당기순이익(억)
     -- 가치 (Value)
     per NUMERIC(10, 2),
     pbr NUMERIC(10, 2),
