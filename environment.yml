@@ -13,10 +13,14 @@ dependencies:
   - sqlalchemy
   - pip
   - pip:
-      - yfinance
-      - pykrx
-      - mplfinance
-      - plotly
-      - tqdm
-      - prophet
-      - pymysql
+    - yfinance
+    - pykrx
+    - mplfinance
+    - plotly
+    - tqdm
+    - prophet
+    - pymysql
+    - requests
+    - beautifulsoup4
+    - psycopg2-binary
+  
