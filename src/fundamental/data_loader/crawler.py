@@ -1,7 +1,8 @@
 import time
 import requests
 import pandas as pd
-from bs4 import BeautifulSoup
+import io
+import numpy as np
 from typing import List, Dict, Optional, Any
 import logging
 from pykrx import stock
@@ -12,16 +13,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_top_companies(limit: int = 200) -> pd.DataFrame:
+    """
+    KOSPI와 KOSDAQ에서 시가총액 상위 `limit`개의 종목 정보를 가져옵니다.
+
+    Outputs:
+        pd.DataFrame: 'company_name', 'company_code', 'exchange', 'market_cap' 컬럼을 포함한 데이터프레임
+    """
 
     today = datetime.now().strftime('%Y%d%m')
 
-    # KOSPI 종목 정보 가져오기
-    df_kospi = stock.get_market_cap_by_ticker(today, market='KOSPI')[:limit]
-    df_kospi['exchange'] = 'KOSPI' # exchange 필드 추가
+    try:
+        # KOSPI 종목 정보
+        df_kospi = stock.get_market_cap_by_ticker(today, market='KOSPI').iloc[:limit]
+        df_kospi['exchange'] = 'KOSPI'
 
-    # KOSDAQ 종목 정보 가져오기
-    df_kosdaq = stock.get_market_cap_by_ticker(today, market='KOSDAQ')[:limit]
-    df_kosdaq['exchange'] = 'KOSDAQ' # exchange 필드 추가
+        # KOSDAQ 종목 정보
+        df_kosdaq = stock.get_market_cap_by_ticker(today, market='KOSDAQ').iloc[:limit]
+        df_kosdaq['exchange'] = 'KOSDAQ'
+    except Exception as e:
+        logger.error(f"pykrx를 통해 종목 정보를 가져오는 중 오류 발생: {e}")
+        return pd.DataFrame()
 
     df = pd.concat([df_kospi, df_kosdaq])
     df = df.sort_values(by='시가총액', ascending=False)
@@ -29,97 +40,132 @@ def get_top_companies(limit: int = 200) -> pd.DataFrame:
     # 인덱스(종목코드)를 리셋하고 'company_code' 컬럼으로 만듭니다.
     df = df.reset_index()
     df = df.rename(columns={'티커': 'company_code'})
+    df = df.rename(columns={'시가총액': 'market_cap'})
 
     # 종목명을 빠르게 추가합니다.
     df['company_name'] = df['company_code'].map(lambda x: stock.get_market_ticker_name(x))
 
     # 최종적으로 필요한 컬럼만 선택하고 순서를 정리합니다.
-    df = df[['company_name', 'company_code', 'exchange', '시가총액']]
+    df = df[['company_name', 'company_code', 'exchange']]
 
     return df
 
-def scrape_financial_data(company: Dict[str, str]) -> Optional[List[Dict[str, Any]]]:
+def crawl_financial_year_data(company: Dict[str, Any]) -> Optional[pd.DataFrame]:
     """
-    주어진 종목 코드로 네이버 재무분석 페이지를 스크래핑하여 분기별 재무 데이터를 반환합니다.
+    주어진 종목의 연간 재무 데이터를 스크래핑하여 DB 스키마에 맞는 DataFrame으로 반환합니다.
 
     Args:
-        company (Dict[str, str]): 'company_name'과 'company_code'를 포함한 기업 정보 딕셔너리
-
+        company (Dict[str, Any]): 'company_name', 'company_code', 'exchange', 'market_cap' 포함
+    
     Returns:
-        Optional[List[Dict[str, Any]]]:
-            성공 시 DB 스키마에 맞는 재무 데이터 딕셔너리의 리스트를 반환합니다.
-            실패 시 None을 반환합니다.
+        Optional[pd.DataFrame]: 성공 시 스키마에 맞춰 가공된 재무 데이터 DataFrame, 실패 시 None
     """
-    url = f"https://finance.naver.com/item/main.naver?code={company['company_code']}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    
+    ajax_url = "https://navercomp.wisereport.co.kr/v2/company/ajax/cF1001.aspx"
+    referer_url = f"https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={company['company_code']}"
+
+    params = {
+        'cmp_cd': company['company_code'],
+        'fin_typ': '4',  # K-IFRS(연결)
+        'freq_typ': 'Y', # 'Y': 연간 데이터
+        'encparam': 'Uk9HN25jMVJoVzhQaVZTc2YrZzdWUT09'
+    }
+    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': referer_url}
+
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(ajax_url, params=params, headers=headers)
         response.raise_for_status()
-        
-        tables = pd.read_html(response.text, encoding='euc-kr')
-        # 분기별 재무제표는 보통 4번째 테이블([3])에 위치합니다.
-        df = tables[3]
 
-        # --- 데이터 가공 ---
+        if not response.text.strip():
+            logger.warning(f"{company['company_name']}({company['company_code']}): 서버로부터 빈 응답을 받았습니다.")
+            return None
+
+        # 1. 데이터 파싱 및 정제
+        tables = pd.read_html(io.StringIO(response.text)) # table tag parsing
+        if len(tables) < 2:
+            logger.warning(f"{company['company_name']}({company['company_code']}): 재무 데이터 테이블을 찾을 수 없습니다.")
+            return None
+        
+        df = tables[1]
+        
+        # 2. 컬럼 및 인덱스 정리
+        df.columns = df.columns.droplevel(0)
         df.set_index(df.columns[0], inplace=True)
-        df.index.name = 'indicator'
-        df.columns = [col[1] for col in df.columns]
+        df = df.loc[:, ~df.columns.str.contains('E')] # 예상(E) 데이터 컬럼 제외
+        df.columns = df.columns.str.replace(r'/12.*', '', regex=True) # '2020/12(IFRS...)' -> '2020'
 
-        # ✅ DB 컬럼에 맞게 전체 지표 매핑
+        # 3. Wide to Long 포맷으로 변환
+        df_long = df.reset_index().melt(id_vars=df.index.name, var_name='year', value_name='value')
+        
+        # 4. DB 스키마에 맞게 지표 매핑
         indicator_map = {
-            'PER(배)': 'per', 'PBR(배)': 'pbr', 'EV/EBITDA(배)': 'ev_ebitda',
-            '매출액증가율(%)': 'sales_growth_yoy', 'EPS증가율(%)': 'eps_growth_yoy',
-            '배당수익률(%)': 'dividend_yield', 'ROE(%)': 'roe', 'ROA(%)': 'roa',
-            'ROIC(%)': 'roic', '매출총이익률(%)': 'gross_profit_margin',
-            '영업이익률(%)': 'operating_profit_margin', '순이익률(%)': 'net_profit_margin',
-            '부채비율': 'debt_ratio', '유동비율': 'current_ratio', '이자보상배율': 'interest_coverage_ratio'
-            # 'peg', 'ev_sales', 'sales_growth_qoq', 'eps_growth_qoq' 등 일부 지표는
-            # 네이버 재무분석 메인 테이블에 없어 None으로 처리됩니다.
+            '매출액': 'sales',
+            '영업이익': 'operating_profit',
+            '당기순이익': 'net_income',
+            'PER(배)': 'per',
+            'PBR(배)': 'pbr',
+            '현금배당수익률': 'dividend_yield',
+            'ROE(%)': 'roe',
+            'ROA(%)': 'roa',
+            '영업이익률': 'operating_profit_margin',
+            '순이익률': 'net_profit_margin',
+            '부채비율': 'debt_ratio',
+            'EPS(원)': 'eps',
+            'BPS(원)': 'bps',
         }
-        df.rename(index=indicator_map, inplace=True)
+        df_long['indicator'] = df_long[df.index.name].map(indicator_map)
+        df_long = df_long.dropna(subset=['indicator'])
+
+        # 5. Long 포맷을 최종 스키마(연도별 행)에 맞게 피벗
+        df_pivot = df_long.pivot_table(index='year', columns='indicator', values='value', aggfunc='first').reset_index()
+
+        # 6. 기본 정보 추가
+        df_pivot['company_code'] = company['company_code']
+        df_pivot['company_name'] = company['company_name']
+        df_pivot['exchange'] = company['exchange']
+        df_pivot['quarter_code'] = '0' # 연간 데이터
         
-        results = []
-        for quarter_col in df.columns:
-            if '.' not in str(quarter_col):
-                continue
-            
-            try:
-                year_month = str(quarter_col).split('(')[0]
-                year = int(year_month.split('.')[0])
-                month = int(year_month.split('.')[1])
-                quarter_code = str((month - 1) // 3 + 1)
+        # 7. 단위 변환 및 데이터 타입 정리
+        # 억원 단위 컬럼 처리 (쉼표 제거 후 1억 곱하기)
+        unit_cols = ['sales', 'operating_profit', 'net_income']
+        for col in unit_cols:
+            if col in df_pivot.columns:
+                df_pivot[col] = pd.to_numeric(df_pivot[col].astype(str).str.replace(',', ''), errors='coerce') # eg. 1.23억
 
-                record = {
-                    'company_code': company['company_code'],
-                    'company_name': company['company_name'],
-                    'year': year,
-                    'quarter_code': quarter_code
-                }
-                
-                # 모든 DB 컬럼에 대한 기본값(None) 설정
-                all_cols = list(indicator_map.values())
-                for col in all_cols:
-                    record[col] = None
-
-                # 스크래핑한 값을 숫자로 변환하여 record에 추가
-                for indicator, value in df[quarter_col].items():
-                    if indicator in all_cols:
-                        # pd.to_numeric을 사용하여 숫자로 변환, 실패 시 None으로 처리
-                        record[indicator] = pd.to_numeric(value, errors='coerce')
-
-                results.append(record)
-            except (ValueError, IndexError):
-                continue # 날짜 형식이 아니면 건너뛰기
+        # 숫자형으로 변환할 나머지 컬럼들
+        numeric_cols = list(set(indicator_map.values()) - set(unit_cols))
+        for col in numeric_cols:
+             if col in df_pivot.columns:
+                df_pivot[col] = pd.to_numeric(df_pivot[col], errors='coerce')
         
-        return results
+        # 8. 스키마에 있는 모든 컬럼을 가지도록 DataFrame 재구성
+        schema_columns = [
+            'company_code', 'company_name', 'exchange', 'year', 'quarter_code',
+            'market_cap', 'sales', 'operating_profit', 'net_income',
+            'per', 'pbr', 'eps', 'bps', 'ev_ebitda', 'ev_sales', 'peg', 'dividend_yield',
+            'roe', 'roa', 'roic', 'gross_profit_margin', 'operating_profit_margin',
+            'net_profit_margin', 'sales_growth_yoy', 'sales_growth_qoq',
+            'eps_growth_yoy', 'eps_growth_qoq', 'debt_ratio', 'current_ratio',
+            'interest_coverage_ratio'
+        ]
+        
+        final_df = pd.DataFrame(columns=schema_columns)
+        for col in schema_columns:
+            if col in df_pivot.columns:
+                final_df[col] = df_pivot[col]
+            else:
+                final_df[col] = np.nan # 스키마에 있지만 크롤링 못한 값은 NaN으로 채움
 
-    except Exception as e:
-        logger.error(f"⚠️ {company['company_name']}({company['company_code']}) 재무 데이터 스크래핑 중 오류 발생: {e}")
+        # 정수형이어야 하는 컬럼들의 타입을 Int64(nullable)로 변경
+        int_cols = ['market_cap', 'sales', 'operating_profit', 'net_income']
+        for col in int_cols:
+             if col in final_df.columns:
+                final_df[col] = final_df[col].astype('Int64')
+
+        return final_df
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"⚠️ {company['company_name']}({company['company_code']}) 요청 오류: {e}")
         return None
-    
-if __name__ == "__main__":
-    print("=== 상위 200개 기업 목록 가져오기 ===")
-    top_companies = get_top_companies(200) 
-    print(f"총 {len(top_companies)}개 기업을 가져왔습니다.\n")
-    print(top_companies[:50])  # 상위 5개 기업 출력
+    except Exception as e:
+        logger.error(f"⚠️ {company['company_name']}({company['company_code']}) 데이터 처리 중 오류: {e}")
+        return None

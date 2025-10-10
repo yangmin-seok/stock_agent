@@ -6,10 +6,17 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     company_name VARCHAR(50) NOT NULL,
     exchange VARCHAR(10) NOT NULL CHECK (exchange IN ('KOSPI', 'KOSDAQ')),
     year INTEGER NOT NULL,
-    quarter_code VARCHAR(10) NOT NULL CHECK (quarter_code IN ('1', '2', '3', '4')),
+    quarter_code VARCHAR(10) NOT NULL CHECK (quarter_code IN ('0','1', '2', '3', '4')), -- 0: 연간, 1: 1분기, 2: 2분기, 3: 3분기, 4: 4분기
+    -- 기초 정보 (Basic Info)
+    market_cap INTEGER, -- 시가총액(억)
+    sales INTEGER NOT NULL, -- 매출액(억), 
+    operating_profit INTEGER NOT NULL, -- 영업이익(억)
+    net_income INTEGER NOT NULL, -- 당기순이익(억)
     -- 가치 (Value)
     per NUMERIC(10, 2),
     pbr NUMERIC(10, 2),
+    eps NUMERIC(10, 2),
+    bps NUMERIC(10, 2),
     ev_ebitda NUMERIC(10, 2),
     ev_sales NUMERIC(10, 2),
     peg NUMERIC(10, 2),
@@ -19,7 +26,7 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     roa NUMERIC(10, 2),
     roic NUMERIC(10, 2),
     gross_profit_margin NUMERIC(10, 2),
-    operating_profit_margin NUMERIC(10, 2),
+    operating_profit_margin NUMERIC(10, 2), -- 영업이익률
     net_profit_margin NUMERIC(10, 2),
     -- 성장성 (Growth)
     sales_growth_yoy NUMERIC(10, 2),
@@ -36,32 +43,3 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     -- 각 기업의 특정 연도, 분기 데이터는 유일해야 합니다.
     UNIQUE(company_code, year, quarter_code)
 );
-
--- 인덱스 추가 (조회 성능 향상)
-CREATE INDEX IF NOT EXISTS idx_company_year_quarter ON financial_indicators (company_code, year, quarter_code);
-
--- updated_at 컬럼 자동 업데이트를 위한 트리거 함수
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-   NEW.updated_at = NOW();
-   RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- 트리거 생성
--- financial_indicators 테이블에 데이터가 업데이트될 때마다 트리거가 실행됩니다.
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_trigger
-        WHERE tgname = 'update_financial_indicators_updated_at'
-    ) THEN
-        CREATE TRIGGER update_financial_indicators_updated_at
-        BEFORE UPDATE ON financial_indicators
-        FOR EACH ROW
-        EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END;
-$$;
