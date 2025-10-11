@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS stock_day_candles (
     id SERIAL PRIMARY KEY,
     company_code VARCHAR(10) NOT NULL,
     company_name VARCHAR(50) NOT NULL,
-    candle_date DATE NOT NULL, -- 주간 캔들 날짜 (해당 주의 마지막 거래일)
+    candle_date DATE NOT NULL, -- 일간 캔들 날짜 (해당 주의 마지막 거래일)
     open INTEGER NOT NULL,  
     high INTEGER NOT NULL,
     low INTEGER NOT NULL,
