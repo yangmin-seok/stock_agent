@@ -78,7 +78,7 @@ def update_financial_data():
         # db_schema.sql 파일이 없다면 테이블 생성을 시도하지 않으므로,
         # 해당 파일이 존재하는지 확인이 필요합니다.
         logger.info("🛠️ 데이터베이스 스키마를 설정합니다 (테이블이 없는 경우 생성).")
-        setup_database(conn)
+        setup_database(conn, path='src/fundamental/data_loader/sql/financial_indicators_schema.sql')
         
         logger.info(f"💾 총 {len(all_financial_data)}개의 연간 재무 데이터를 데이터베이스에 저장(UPSERT)합니다...")
         save_financial_data(conn, all_financial_data)

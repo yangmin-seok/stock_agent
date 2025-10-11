@@ -25,16 +25,16 @@ def get_db_connection(db_config: Dict[str, str]) -> connection:
         print(f"❌ 데이터베이스 연결에 실패했습니다: {e}")
         raise
 
-def setup_database(conn: connection) -> None:
+def setup_database(conn: connection, path: str) -> None:
     """
-    데이터베이스에 financial_indicators 테이블과 관련 설정을 생성합니다.
+    데이터베이스에 path에 해당하는 테이블과 관련 설정을 생성합니다.
     테이블이 이미 존재하면 생성하지 않습니다.
 
     Args:
         conn (connection): psycopg2 연결 객체
     """
     # load db schema from file
-    with open('src/fundamental/data_loader/db_schema.sql', 'r', encoding='utf-8') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         ddl_script = f.read()
     with conn.cursor() as cur:
         cur.execute(ddl_script)
