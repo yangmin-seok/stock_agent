@@ -23,7 +23,7 @@ def get_all_company_codes(conn) -> List[Dict[str, str]]:
         rows = cur.fetchall()
         return [{"company_code": row[0], "company_name": row[1]} for row in rows]
 
-def get_weekly_candle_data(company_list: List[Dict[str, str]]) -> pd.DataFrame:
+def get_day_candle_data(company_list: List[Dict[str, str]]) -> pd.DataFrame:
     """
     주어진 모든 회사에 대한 일봉 데이터를 pykrx를 통해 가져옵니다.
     """
@@ -108,7 +108,7 @@ def save_day_data_to_db(conn, df: pd.DataFrame):
             logger.error(f"❌ 데이터베이스 저장 중 오류 발생: {e}")
             raise
 
-def update_stock_weekly_candles():
+def update_stock_day_candles():
     """
     전체 프로세스를 실행하여 일봉 데이터를 업데이트합니다.
     """
@@ -128,7 +128,7 @@ def update_stock_weekly_candles():
             return
 
         logger.info(f"📊 총 {len(company_list)}개 종목의 주봉 데이터를 수집합니다...")
-        weekly_data_df = get_weekly_candle_data(company_list)
+        weekly_data_df = get_day_candle_data(company_list)
 
         save_day_data_to_db(conn, weekly_data_df)
 
@@ -138,4 +138,4 @@ def update_stock_weekly_candles():
             logger.info("🔗 데이터베이스 연결을 종료합니다.")
 
 if __name__ == "__main__":
-    update_stock_weekly_candles()
+    update_stock_day_candles()
