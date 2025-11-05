@@ -1,0 +1,34 @@
+
+#score_field {
+    float: right;
+    background-color: rgb(14,31,49);
+    margin-top: 1.9px;
+    margin-left: 3px;
+    width: 100px;
+}
+
+#level, #score {
+    font-size :28px;
+    text-align: center;
+    font-weight: bold;
+    color: white;
+    height: 30px;
+}
+
+#help {
+    font-size :18px;
+    text-align: center;
+    font-weight: bold;
+    color: white;
+    height: 20px;
+}
+
+.sub {
+    font-size :22px;
+    text-align: center;
+    font-weight: bold;
+    color: white;
+    background-color: rgb(21,46,74);
+    padding: 10px;
+    margin: 0px;
+}
