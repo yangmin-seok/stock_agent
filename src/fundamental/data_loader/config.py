@@ -15,3 +15,5 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "port": os.getenv("DB_PORT")
 }
+
+PAGE_NUMBER = 140  # Number of pages to scrape for investor trading data

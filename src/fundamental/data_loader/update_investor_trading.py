@@ -14,18 +14,20 @@ import time
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def scrape_naver_market_liquidity_by_page(page: int) -> Optional[Dict[str, Any]]:
+def scrape_naver_investor_trading_value_by_page(page: int) -> Optional[Dict[str, Any]]:
     """
-    네이버 금융 '증시자금동향' 페이지에서 고객예탁금과 신용잔고 데이터를 크롤링합니다.
+    개인, 외국인, 기관의 순매수, 순매도 데이터를 크롤링하는 함수입니다.
     이 페이지는 보통 최신 거래일의 데이터를 제공합니다.
     """
-    base_url = "https://finance.naver.com/sise/sise_deposit.naver"
-    url = f"{base_url}?page={page}"  # 코스피 전체
+    date = datetime.now().strftime('%Y%m%d')
+    base_url = "https://finance.naver.com/sise/investorDealTrendDay.naver"
+    page_url = f"?bizdate={date}&sosok=&page={page}"
+    url = base_url + page_url
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
     }
     
-    logger.info("네이버 금융에서 증시자금동향 데이터 크롤링 시작...")
+    logger.info("네이버 금융에서 투자자별 데이터 크롤링 시작...")
     all_data_in_page = []
     try:
         response = requests.get(url, headers=headers)
@@ -35,16 +37,17 @@ def scrape_naver_market_liquidity_by_page(page: int) -> Optional[Dict[str, Any]]
         
         # 데이터 테이블의 모든 데이터 행(tr)을 선택
         # th를 포함하는 헤더 행(상위 3개)은 제외
-        data_rows = soup.select('table.type_1 tr')[3:] # slicing to skip header rows
-     
+        data_rows = soup.select('table.type_1 tr')[3:] # slicing to skip header rows 
+        actual_data_rows = [row for row in data_rows if row.find('td', class_='date2')]
+
         # 데이터 행이 없으면 빈 리스트 반환 (마지막 페이지라는 신호)
-        if not any(row.find('td', class_='date') for row in data_rows):
+        if not any(row.find('td', class_='date2') for row in data_rows):
             logger.info(f"P.{page}에서 데이터 행을 찾을 수 없습니다. 크롤링을 중단합니다.")
             return []
 
-        for row in data_rows:
+        for row in actual_data_rows:
             # 날짜 td가 없는 행(구분선 등)은 건너뛰기
-            if not row.find('td', class_='date'):
+            if not row.find('td', class_='date2'):
                 continue
 
             cells = row.find_all('td')
@@ -53,22 +56,20 @@ def scrape_naver_market_liquidity_by_page(page: int) -> Optional[Dict[str, Any]]
             date_str = cells[0].text.strip()
             trade_date = datetime.strptime(date_str, '%y.%m.%d').strftime('%Y-%m-%d')
             
-            # 고객예탁금
-            deposits_str = cells[1].text.strip().replace(',', '')
-            investor_deposits = int(deposits_str)
+            # 개인 순매수/순매도
+            individual_trading_value = int(cells[1].text.strip().replace(',', ''))
+            
+            # 외국인
+            foreign_trading_value = int(cells[2].text.strip().replace(',', ''))
 
-            # 신용잔고
-            credit_str = cells[3].text.strip().replace(',', '')
-            credit_balance = int(credit_str)
-
-            # 신용잔고율 계산
-            credit_deposit_ratio = (credit_balance / investor_deposits * 100) if investor_deposits != 0 else 0.0
+            # 기관
+            institutional_trading_value = int(cells[3].text.strip().replace(',', ''))
 
             result_dict = {
                 "trade_date": trade_date,
-                "investor_deposits": investor_deposits,
-                "credit_balance": credit_balance,
-                "credit_deposit_ratio": round(credit_deposit_ratio, 2)
+                "individual_trading_value": individual_trading_value,
+                "foreign_trading_value": foreign_trading_value,
+                "institutional_trading_value": institutional_trading_value
             }
             all_data_in_page.append(result_dict)
 
@@ -83,22 +84,22 @@ def scrape_naver_market_liquidity_by_page(page: int) -> Optional[Dict[str, Any]]
         return []
 
 
-def update_historical_market_liquidity():
+def update_historical_investor_trading_value():
     """
-    네이버에서 증시 유동성 데이터를 첫 페이지부터 순차적으로 크롤링하여 DB에 저장합니다.
+    네이버에서 개인, 외국인, 기관의 순매수, 순매도 데이터를 첫 페이지부터 순차적으로 크롤링하여 DB에 저장합니다.
     """
     logger.info("🚀 증시 유동성 전체 데이터 업데이트 프로세스 시작...")
     
     conn = None
     try:
         conn = get_db_connection(DB_CONFIG)
-        setup_database(conn, 'src/fundamental/data_loader/sql/market_liquidity_schema.sql')
+        setup_database(conn, 'src/fundamental/data_loader/sql/investor_trading_schema.sql')
         logger.info("DB 연결 및 테이블 설정 완료.")
 
         page = 1
-        while page <= PAGE_NUMBER:
+        while page <= (PAGE_NUMBER+140):
             # 페이지별 데이터 크롤링
-            daily_data_list = scrape_naver_market_liquidity_by_page(page)
+            daily_data_list = scrape_naver_investor_trading_value_by_page(page)
             
             # 크롤링할 데이터가 더 이상 없으면 루프 종료
             if not daily_data_list:
@@ -114,7 +115,7 @@ def update_historical_market_liquidity():
 
             # ON CONFLICT 문법으로 UPSERT (INSERT or UPDATE) 구현
             sql = f"""
-                INSERT INTO market_liquidity ({cols_str}) 
+                INSERT INTO investor_trading ({cols_str}) 
                 VALUES ({placeholders}) 
                 ON CONFLICT (trade_date) DO UPDATE SET {update_str};
             """
@@ -139,4 +140,4 @@ def update_historical_market_liquidity():
     logger.info("🎉 모든 작업이 완료되었습니다.")
 
 if __name__ == "__main__":
-    update_historical_market_liquidity()
+    update_historical_investor_trading_value()
