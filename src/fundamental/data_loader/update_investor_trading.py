@@ -14,14 +14,14 @@ import time
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def scrape_naver_investor_trading_value_by_page(page: int) -> Optional[Dict[str, Any]]:
+def scrape_naver_investor_trading_value_by_page(sosok: str, page: int) -> Optional[Dict[str, Any]]:
     """
     개인, 외국인, 기관의 순매수, 순매도 데이터를 크롤링하는 함수입니다.
     이 페이지는 보통 최신 거래일의 데이터를 제공합니다.
     """
     date = datetime.now().strftime('%Y%m%d')
     base_url = "https://finance.naver.com/sise/investorDealTrendDay.naver"
-    page_url = f"?bizdate={date}&sosok=&page={page}"
+    page_url = f"?bizdate={date}&sosok={sosok}&page={page}"
     url = base_url + page_url
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
@@ -67,6 +67,7 @@ def scrape_naver_investor_trading_value_by_page(page: int) -> Optional[Dict[str,
 
             result_dict = {
                 "trade_date": trade_date,
+                "sosok": sosok,
                 "individual_trading_value": individual_trading_value,
                 "foreign_trading_value": foreign_trading_value,
                 "institutional_trading_value": institutional_trading_value
@@ -96,37 +97,39 @@ def update_historical_investor_trading_value():
         setup_database(conn, 'src/fundamental/data_loader/sql/investor_trading_schema.sql')
         logger.info("DB 연결 및 테이블 설정 완료.")
 
-        page = 1
-        while page <= (PAGE_NUMBER+140):
-            # 페이지별 데이터 크롤링
-            daily_data_list = scrape_naver_investor_trading_value_by_page(page)
-            
-            # 크롤링할 데이터가 더 이상 없으면 루프 종료
-            if not daily_data_list:
-                break
-            
-            # DB 저장 로직 (UPSERT)
-            columns = daily_data_list[0].keys()
-            cols_str = ", ".join(f'"{col}"' for col in columns)
-            placeholders = ", ".join([f"%({col})s" for col in columns])
-            # trade_date가 중복될 경우 다른 컬럼들을 업데이트
-            update_cols = [col for col in columns if col not in ['trade_date']]
-            update_str = ", ".join([f'"{col}" = EXCLUDED."{col}"' for col in update_cols])
+        for sosok in ['01', '02']:  # 01: KOSPI, 02: KOSDAQ
+            logger.info(f"🔍 소속 코드 {sosok} 데이터 크롤링 시작...")
+            page = 1
+            while page <= (PAGE_NUMBER+140):
+                # 페이지별 데이터 크롤링
+                daily_data_list = scrape_naver_investor_trading_value_by_page(sosok, page)
+                
+                # 크롤링할 데이터가 더 이상 없으면 루프 종료
+                if not daily_data_list:
+                    break
+                
+                # DB 저장 로직 (UPSERT)
+                columns = daily_data_list[0].keys()
+                cols_str = ", ".join(f'"{col}"' for col in columns)
+                placeholders = ", ".join([f"%({col})s" for col in columns])
+                # trade_date가 중복될 경우 다른 컬럼들을 업데이트
+                update_cols = [col for col in columns if col not in ['trade_date']]
+                update_str = ", ".join([f'"{col}" = EXCLUDED."{col}"' for col in update_cols])
 
-            # ON CONFLICT 문법으로 UPSERT (INSERT or UPDATE) 구현
-            sql = f"""
-                INSERT INTO investor_trading ({cols_str}) 
-                VALUES ({placeholders}) 
-                ON CONFLICT (trade_date) DO UPDATE SET {update_str};
-            """
-            
-            with conn.cursor() as cur:
-                psycopg2.extras.execute_batch(cur, sql, daily_data_list)
-                conn.commit()
-                logger.info(f"💾 P.{page}의 데이터 {len(daily_data_list)}건이 성공적으로 저장/업데이트되었습니다.")
+                # ON CONFLICT 문법으로 UPSERT (INSERT or UPDATE) 구현
+                sql = f"""
+                    INSERT INTO investor_trading ({cols_str}) 
+                    VALUES ({placeholders}) 
+                    ON CONFLICT (trade_date) DO UPDATE SET {update_str};
+                """
+                
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_batch(cur, sql, daily_data_list)
+                    conn.commit()
+                    logger.info(f"💾 P.{page}의 데이터 {len(daily_data_list)}건이 성공적으로 저장/업데이트되었습니다.")
 
-            page += 1
-            time.sleep(1) # 서버 부하를 줄이기 위해 페이지 요청 간 1초 대기
+                page += 1
+                time.sleep(1) # 서버 부하를 줄이기 위해 페이지 요청 간 1초 대기
 
     except Exception as e:
         if conn:
