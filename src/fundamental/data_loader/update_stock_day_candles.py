@@ -32,7 +32,7 @@ def get_daily_data_with_trading_value(company_list: List[Dict[str, str]]) -> pd.
     """
     all_company_data = []
     to_date = datetime.now().strftime('%Y%m%d')
-    from_date = (datetime.now() - timedelta(days=365 * 3)).strftime('%Y%m%d')
+    from_date = (datetime.now() - timedelta(days=365 * 5)).strftime('%Y%m%d')
 
     for company in company_list:
         try:
