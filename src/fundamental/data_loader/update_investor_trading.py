@@ -64,6 +64,7 @@ def scrape_naver_investor_trading_value_by_page(sosok: str, page: int) -> Option
 
             # 기관
             institutional_trading_value = int(cells[3].text.strip().replace(',', ''))
+            
 
             result_dict = {
                 "trade_date": trade_date,
@@ -120,7 +121,7 @@ def update_historical_investor_trading_value():
                 sql = f"""
                     INSERT INTO investor_trading ({cols_str}) 
                     VALUES ({placeholders}) 
-                    ON CONFLICT (trade_date) DO UPDATE SET {update_str};
+                    ON CONFLICT (trade_date, sosok) DO UPDATE SET {update_str};
                 """
                 
                 with conn.cursor() as cur:

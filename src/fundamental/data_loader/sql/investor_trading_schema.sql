@@ -1,11 +1,14 @@
 -- schema.sql
 CREATE TABLE IF NOT EXISTS investor_trading (
-    trade_date DATE PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    trade_date DATE,
     sosok CHAR(2) NOT NULL CHECK (sosok IN ('01', '02')),
     individual_trading_value BIGINT,
     foreign_trading_value BIGINT,
     institutional_trading_value BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (trade_date, sosok)
 );
 
 COMMENT ON TABLE investor_trading IS '일자별 증시 유동성 지표';
