@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS stock_day_candles (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
     foreign_net_buy_amount INTEGER, -- 외국인 순매수 금액(억)
+    pension_fund_net_buy_amount INTEGER, -- 연기금 순매수 금액(억)
     -- 각 기업의 특정 날짜 데이터는 유일해야 합니다.
     UNIQUE(company_code, candle_date)
 );

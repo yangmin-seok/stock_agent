@@ -40,19 +40,25 @@ def get_daily_data_with_trading_value(company_list: List[Dict[str, str]]) -> pd.
             if df_ohlcv.empty:
                 continue
 
-            df_trading_value = stock.get_market_trading_value_by_date(from_date, to_date, company['company_code'])
+            df_trading_value = stock.get_market_trading_value_by_date(from_date, to_date, company['company_code'], detail=True)
 
-            df_foreign_net_buy = df_trading_value[['외국인합계']].reset_index()
-            df_foreign_net_buy['외국인합계'] = (df_foreign_net_buy['외국인합계'] / 100_000_000).astype(int)
-            df_foreign_net_buy = df_foreign_net_buy.rename(columns={'날짜': 'candle_date', '외국인합계': 'foreign_net_buy_amount'})
+            df_foreign_net_buy = df_trading_value[['외국인']].reset_index()
+            df_foreign_net_buy['외국인'] = (df_foreign_net_buy['외국인'] / 100_000_000).astype(int)
+            df_foreign_net_buy = df_foreign_net_buy.rename(columns={'날짜': 'candle_date', '외국인': 'foreign_net_buy_amount'})
+
+            df_pension_fund_net_buy = df_trading_value[['연기금']].reset_index()
+            df_pension_fund_net_buy['연기금'] = (df_pension_fund_net_buy['연기금'] / 100_000_000).astype(int)
+            df_pension_fund_net_buy = df_pension_fund_net_buy.rename(columns={'날짜': 'candle_date', '연기금': 'pension_fund_net_buy_amount'})
 
             df_ohlcv = df_ohlcv.reset_index().rename(columns={'날짜': 'candle_date'})
             merged_df = pd.merge(df_ohlcv, df_foreign_net_buy, on='candle_date', how='left')
+            merged_df = pd.merge(merged_df, df_pension_fund_net_buy, on='candle_date', how='left')
 
             merged_df['company_code'] = company['company_code']
             merged_df['company_name'] = company['company_name']
             all_company_data.append(merged_df)
             logger.info(f"✅ {company['company_name']}({company['company_code']}) 데이터 수집 완료")
+
         except Exception as e:
             logger.error(f"⚠️ {company['company_name']}({company['company_code']}) 데이터 수집 중 오류: {e}")
 
@@ -68,7 +74,7 @@ def get_daily_data_with_trading_value(company_list: List[Dict[str, str]]) -> pd.
         '거래량': 'volume'
     })
 
-    final_df = final_df[['company_code', 'company_name', 'candle_date', 'open', 'high', 'low', 'close', 'volume', 'foreign_net_buy_amount']]
+    final_df = final_df[['company_code', 'company_name', 'candle_date', 'open', 'high', 'low', 'close', 'volume', 'foreign_net_buy_amount', 'pension_fund_net_buy_amount']]
     return final_df
 
 
@@ -88,7 +94,7 @@ def save_daily_data_to_db(conn, df: pd.DataFrame):
     cols_str = ", ".join([f'"{col}"' for col in columns])
     placeholders = ", ".join([f"%({col})s" for col in columns])
 
-    update_cols = ['open', 'high', 'low', 'close', 'volume', 'foreign_net_buy_amount']
+    update_cols = ['open', 'high', 'low', 'close', 'volume', 'foreign_net_buy_amount', 'pension_fund_net_buy_amount']
     update_str = ", ".join([f'"{col}" = EXCLUDED."{col}"' for col in update_cols])
     update_str += ', updated_at = CURRENT_TIMESTAMP'
 
