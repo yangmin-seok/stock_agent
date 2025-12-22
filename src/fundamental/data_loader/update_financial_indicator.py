@@ -12,12 +12,14 @@ from datetime import datetime
 from dart_fss.errors import NotFoundConsolidated
 import os
 
-# 기존 모듈 임포트 유지
+# --- 프로젝트 내부 모듈 임포트 (사용자 환경에 맞게 유지) ---
 from src.fundamental.data_loader.crawler import get_top_companies
 from src.fundamental.data_loader.db_util import get_db_connection, setup_database
 from src.fundamental.data_loader.config import DB_CONFIG
 
-# 로깅 설정
+# ---------------------------------------------------------
+# [설정] 로깅 및 API 키
+# ---------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -28,16 +30,16 @@ logger = logging.getLogger(__name__)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- [설정] DART API KEY ---
 DART_API_KEY = os.getenv('DART_API_KEY')
 dart.set_api_key(DART_API_KEY)
 
+
 # ==========================================
-# 1. 헬퍼 함수들 (전처리 및 값 추출)
+# 1. 헬퍼 함수들 (데이터 전처리)
 # ==========================================
-# (기존 로직과 동일하여 그대로 유지)
 
 def safe_int(value):
+    """NaN, Inf, None 등을 0으로 처리하고 정수로 변환"""
     try:
         if value is None: return 0
         if isinstance(value, (int, float)):
@@ -49,9 +51,12 @@ def safe_int(value):
         return 0
 
 def preprocess_df(df):
+    """MultiIndex 컬럼 평탄화 및 메타데이터 정리"""
     if df is None or df.empty: return df
+    
     if df.index.names and any('concept_id' in str(name) for name in df.index.names):
         df = df.reset_index()
+
     if isinstance(df.columns, pd.MultiIndex):
         new_cols = []
         for col in df.columns:
@@ -70,24 +75,30 @@ def preprocess_df(df):
     return df
 
 def get_value(df, concept_id_exact, label_pattern, year_col):
+    """값 추출 함수 (Concept ID 우선, 없으면 Label 검색)"""
     if df is None or df.empty or year_col not in df.columns: return 0.0
+    
     val = 0.0
     found = False
+
     if 'concept_id' in df.columns:
         mask = df['concept_id'].astype(str) == concept_id_exact
         if mask.any():
             val = df.loc[mask, year_col].values[0]
             found = True
+            
     if not found and 'label_ko' in df.columns:
         mask = df['label_ko'].astype(str).str.contains(label_pattern, case=False, na=False)
         if mask.any():
             val = df.loc[mask, year_col].values[0]
+    
     try:
         return float(str(val).replace(',', ''))
     except:
         return 0.0
 
 def find_year_columns(df):
+    """데이터프레임 컬럼에서 연도(YYYY) 식별"""
     if df is None: return {}
     year_cols = {}
     for col in df.columns:
@@ -96,8 +107,9 @@ def find_year_columns(df):
             year_cols[matches[0]] = col
     return year_cols
 
+
 # ==========================================
-# 2. 핵심 로직: 기업 재무 데이터 처리
+# 2. 핵심 로직: 기업 재무 데이터 처리 (DART-FSS)
 # ==========================================
 
 def process_company_financials(company_dict, corp_list, start_year=2024):
@@ -105,6 +117,7 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
     company_name = company_dict['company_name']
     exchange = company_dict.get('exchange', 'KOSPI')
 
+    # 우선주/스팩 제외
     if company_name.endswith('우') or company_name.endswith('우B') or '스팩' in company_name:
         return []
 
@@ -114,14 +127,16 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
         
         fs = None
         try:
+            # 연결재무제표 시도
             fs = corp.extract_fs(bgn_de=f'{start_year}0101', report_tp='annual')
         except NotFoundConsolidated:
             try:
+                # 연결 없으면 별도재무제표 시도
                 fs = corp.extract_fs(bgn_de=f'{start_year}0101', report_tp='annual', separate=True)
             except Exception:
                 return []
         except Exception as e:
-            logger.error(f"❌ {company_name}: 데이터 추출 에러 - {e}")
+            logger.error(f"❌ {company_name}: 데이터 추출 에러(API 등) - {e}")
             return []
 
         if fs is None: return []
@@ -130,10 +145,10 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
             try: return fs_obj[key]
             except: return None
 
-        df_bs = preprocess_df(safe_extract(fs, 'bs'))
-        df_is = preprocess_df(safe_extract(fs, 'is'))
-        df_cis = preprocess_df(safe_extract(fs, 'cis'))
-        df_cf = preprocess_df(safe_extract(fs, 'cf'))
+        df_bs = preprocess_df(safe_extract(fs, 'bs'))   # 재무상태표
+        df_is = preprocess_df(safe_extract(fs, 'is'))   # 손익계산서
+        df_cis = preprocess_df(safe_extract(fs, 'cis')) # 포괄손익계산서
+        df_cf = preprocess_df(safe_extract(fs, 'cf'))   # 현금흐름표
         
         map_bs = find_year_columns(df_bs)
         map_is = find_year_columns(df_is)
@@ -147,8 +162,9 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
         years = [y for y in years if int(y) >= start_year]
 
         results = []
-        scale = 100000000.0 
+        scale = 100000000.0 # 1억 단위
         
+        # 주가 데이터 가져오기
         try:
             if years:
                 df_price = fdr.DataReader(company_code, start=f"{min(years)}-01-01")
@@ -163,6 +179,7 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
             c_cis = map_cis.get(year)
             c_cf = map_cf.get(year)
             
+            # 손익 항목 추출 헬퍼
             def get_pl_value(concept_id, label_list):
                 val = 0.0
                 if c_is and df_is is not None:
@@ -200,6 +217,7 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
             
             div_paid = abs(get_value(df_cf, 'ifrs-full_DividendsPaidClassifiedAsFinancingActivities', '배당금의지급', c_cf))
             
+            # 재무 비율
             roe = (ni / equity * 100) if equity else 0
             roa = (ni / assets * 100) if assets else 0
             debt_ratio = (liab / equity * 100) if equity else 0
@@ -261,27 +279,42 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
         logger.warning(f"⚠️ {company_name}({company_code}) 처리 중 예외: {e}")
         return []
 
+
 # ==========================================
-# 3. DB 저장 함수 (분리됨)
+# 3. DB 관련 함수 (조회/저장)
 # ==========================================
+
+def get_existing_codes(conn):
+    """
+    DB에서 이미 데이터가 존재하는 company_code 목록을 Set으로 반환 (중복 수집 방지)
+    """
+    try:
+        with conn.cursor() as cur:
+            # financial_indicators 테이블에서 고유한 company_code만 조회
+            sql = "SELECT DISTINCT company_code FROM financial_indicators"
+            cur.execute(sql)
+            rows = cur.fetchall()
+            existing_codes = {row[0] for row in rows}
+            return existing_codes
+    except Exception as e:
+        # 테이블이 없거나 에러 발생 시 빈 집합 반환 -> 전체 수집 진행
+        logger.warning(f"⚠️ 기존 데이터 확인 실패 (최초 실행 가정): {e}")
+        return set()
 
 def save_to_db(conn, data_list):
     """
-    데이터 리스트를 받아서 즉시 DB에 UPSERT 수행
+    데이터 리스트를 받아서 즉시 DB에 UPSERT 수행 후 Commit
     """
-    if not data_list:
-        return
+    if not data_list: return
 
     try:
-        # 데이터의 키를 기반으로 컬럼명 추출
         first_record = data_list[0]
         columns = list(first_record.keys())
 
-        # 쿼리 동적 생성
         cols_str = ", ".join(f'"{col}"' for col in columns)
         placeholders = ", ".join([f"%({col})s" for col in columns])
         
-        # Primary Key 설정 (중복 시 업데이트할 컬럼 지정)
+        # Primary Key (company_code, year) 충돌 시 업데이트
         pk_columns = ['company_code', 'year']
         update_cols = [col for col in columns if col not in pk_columns]
         update_str = ", ".join([f'"{col}" = EXCLUDED."{col}"' for col in update_cols])
@@ -299,16 +332,17 @@ def save_to_db(conn, data_list):
     except Exception as e:
         conn.rollback()
         logger.error(f"❌ DB 저장 실패 (Batch Size: {len(data_list)}): {e}")
-        raise e  # 메인 루프에서 알 수 있게 예외를 다시 던짐
+        raise e  # 메인 루프에서 알 수 있게 예외 발생
+
 
 # ==========================================
-# 4. 메인 실행 함수 (수정됨)
+# 4. 메인 실행 함수
 # ==========================================
 
 def update_financial_data():
     logger.info("🚀 데이터베이스 업데이트 프로세스 시작")
 
-    # 상위 N개 기업 가져오기
+    # 상위 기업 리스트 가져오기
     top_companies_df = get_top_companies(limit=100) 
     
     if top_companies_df.empty:
@@ -323,35 +357,49 @@ def update_financial_data():
         return
 
     total_companies = len(top_companies_df)
-    logger.info(f"🐢 {total_companies}개 기업 데이터 수집 및 실시간 저장 시작...")
     
-    # [변경점 1] DB 연결을 루프 밖에서 미리 수행
     conn = None
     try:
+        # 1. DB 연결 및 스키마 초기화
         conn = get_db_connection(DB_CONFIG)
         setup_database(conn, path='src/fundamental/data_loader/sql/financial_indicators_schema.sql')
-        logger.info("✅ DB 연결 및 테이블 체크 완료")
+        
+        # 2. 이미 수집된 기업 목록 확인 (Skip용)
+        logger.info("🔍 기존 수집 데이터 확인 중...")
+        existing_codes = get_existing_codes(conn)
+        logger.info(f"✅ 이미 존재하는 기업: {len(existing_codes)}개 (Skip 대상)")
 
+        logger.info(f"🐢 {total_companies}개 기업 데이터 수집 시작...")
+
+        # 3. 기업별 반복문 실행
         for i, row in tqdm(top_companies_df.iterrows(), total=total_companies, desc="Processing"):
             company_name = row['company_name']
+            company_code = row['company_code'] 
             
-            # 재시도 로직
+            # [Skip Logic] 이미 DB에 있으면 건너뛰기
+            if company_code in existing_codes:
+                continue 
+
+            # [Process] 데이터 수집 및 저장
             max_retries = 2
-            company_data = [] # 한 기업의 데이터
+            company_data = []
 
             for attempt in range(max_retries):
                 try:
-                    # 데이터 수집
+                    # 데이터 크롤링
                     company_data = process_company_financials(row.to_dict(), dart_corp_list, start_year=2014)
                     
                     if company_data:
-                        # [변경점 2] 수집 직후 DB 저장 호출
+                        # 즉시 DB 저장
                         save_to_db(conn, company_data)
                         logger.info(f"[{i+1}/{total_companies}] ✅ '{company_name}' - {len(company_data)}건 저장 완료")
+                        
+                        # [중요] 저장된 기업 코드는 Skip 목록에 추가 (중복 방지 동기화)
+                        existing_codes.add(company_code)
                     else:
                         logger.info(f"[{i+1}/{total_companies}] ⚠️ '{company_name}' - 데이터 없음")
                     
-                    break # 성공하면 재시도 루프 탈출
+                    break # 성공 시 루프 탈출
                 
                 except Exception as e:
                     if attempt < max_retries - 1:
@@ -360,13 +408,12 @@ def update_financial_data():
                     else:
                         logger.error(f"❌ '{company_name}' 최종 실패: {e}")
             
-            # DART API 호출 제한 고려
+            # DART API 호출 간격 조절
             time.sleep(1)
 
     except Exception as e:
         logger.error(f"🔥 치명적 오류 발생: {e}")
     finally:
-        # [변경점 3] 모든 작업 종료 후 연결 해제
         if conn:
             conn.close()
             logger.info("🏁 DB 연결 종료 및 프로세스 완료")
