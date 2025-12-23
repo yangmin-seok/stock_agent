@@ -188,18 +188,20 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
                         if temp != 0: 
                             val = temp
                             break
+
                 if val == 0 and c_cis and df_cis is not None:
                     for label in label_list:
                         temp = get_value(df_cis, concept_id, label, c_cis)
                         if temp != 0:
                             val = temp
                             break
+
                 return val
 
             sales = get_pl_value('ifrs-full_Revenue', ['매출액', '수익(매출액)', '영업수익'])
             op = get_pl_value('dart_OperatingIncomeLoss', ['영업이익', '영업이익(손실)'])
             ni = get_pl_value('ifrs-full_ProfitLoss', ['당기순이익', '당기순이익(손실)'])
-            eps = get_pl_value('ifrs-full_BasicEarningsLossPerShare', ['기본주당이익'])
+            eps = get_pl_value('ifrs-full_BasicEarningsLossPerShare', ['기본주당이익', '기본주당순이익'])
             
             assets = get_value(df_bs, 'ifrs-full_Assets', '자산총계', c_bs)
             liab = get_value(df_bs, 'ifrs-full_Liabilities', '부채총계', c_bs)
@@ -223,6 +225,11 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
             debt_ratio = (liab / equity * 100) if equity else 0
             reserve_ratio = ((equity - capital) / capital * 100) if capital else 0
             payout_ratio = (div_paid / ni * 100) if ni > 0 else 0
+
+            # [핵심] 값이 비정상적으로 크면 0으로 초기화 (2차 방어)
+            # 기준: 1,000만 원 초과 시 당기순이익 혼입 등 오류로 간주
+            if abs(eps) > 10000000:
+                eps = 0
             
             bps = 0
             if eps and ni:
