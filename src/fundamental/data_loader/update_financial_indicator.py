@@ -74,28 +74,52 @@ def preprocess_df(df):
         df.columns = new_cols
     return df
 
-def get_value(df, concept_id_exact, label_pattern, year_col):
-    """값 추출 함수 (Concept ID 우선, 없으면 Label 검색)"""
-    if df is None or df.empty or year_col not in df.columns: return 0.0
+# def get_value(df, concept_id_exact, label_pattern, year_col):
+#     """값 추출 함수 (Concept ID 우선, 없으면 Label 검색)"""
+#     if df is None or df.empty or year_col not in df.columns: return 0.0
     
-    val = 0.0
-    found = False
+#     val = 0.0
+#     found = False
 
-    if 'concept_id' in df.columns:
-        mask = df['concept_id'].astype(str) == concept_id_exact
-        if mask.any():
-            val = df.loc[mask, year_col].values[0]
-            found = True
+#     if 'concept_id' in df.columns:
+#         mask = df['concept_id'].astype(str) == concept_id_exact
+#         if mask.any():
+#             val = df.loc[mask, year_col].values[0]
+#             found = True
             
-    if not found and 'label_ko' in df.columns:
-        mask = df['label_ko'].astype(str).str.contains(label_pattern, case=False, na=False)
-        if mask.any():
-            val = df.loc[mask, year_col].values[0]
+#     if not found and 'label_ko' in df.columns:
+#         mask = df['label_ko'].astype(str).str.contains(label_pattern, case=False, na=False)
+#         if mask.any():
+#             val = df.loc[mask, year_col].values[0]
     
-    try:
-        return float(str(val).replace(',', ''))
-    except:
+#     try:
+#         return float(str(val).replace(',', ''))
+#     except:
+#         return 0.0
+def get_value(df, concept_id_exact, label_pattern, year_col):
+    """
+    라벨(한글명)은 절대 보지 않고, 
+    오직 'concept_id'가 100% 일치하는 경우에만 값을 반환합니다.
+    없으면 무조건 0을 반환합니다.
+    """
+    if df is None or df.empty or year_col not in df.columns: 
         return 0.0
+    
+    # concept_id 컬럼이 없으면 포기
+    if 'concept_id' not in df.columns:
+        return 0.0
+
+    # [핵심] 정확히 일치하는지 검사 (== 연산자 사용)
+    mask = df['concept_id'] == concept_id_exact
+    
+    if mask.any():
+        val = df.loc[mask, year_col].values[0]
+        try:
+            return float(str(val).replace(',', ''))
+        except:
+            return 0.0
+            
+    return 0.0
 
 def find_year_columns(df):
     """데이터프레임 컬럼에서 연도(YYYY) 식별"""
@@ -279,6 +303,7 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
                 'dividend_yield': None, 
                 'payout_ratio': round(payout_ratio, 2)
             }
+
             results.append(data)
         return results
 
