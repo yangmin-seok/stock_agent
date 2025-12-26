@@ -164,6 +164,7 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
             return []
 
         if fs is None: return []
+        fs.save()
 
         def safe_extract(fs_obj, key):
             try: return fs_obj[key]
@@ -289,7 +290,7 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
                 'cash_flow_from_financing': safe_int(fcf_fin/scale),
                 'capex': safe_int(capex/scale),
                 'fcf': safe_int(fcf/scale),
-                'opearting_profit_margin': round(op/sales*100 if sales else 0, 2),
+                'operating_profit_margin': round(op/sales*100 if sales else 0, 2),
                 'net_profit_margin': round(ni/sales*100 if sales else 0, 2),
                 'roe': round(roe, 2),
                 'roa': round(roa, 2),
@@ -303,6 +304,10 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
                 'dividend_yield': None, 
                 'payout_ratio': round(payout_ratio, 2)
             }
+            
+            # data 출력
+            for key, val in data.items():
+                logger.info(f"    {key}: {val}")
 
             results.append(data)
         return results

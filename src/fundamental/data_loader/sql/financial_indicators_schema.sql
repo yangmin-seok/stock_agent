@@ -23,12 +23,11 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     capex INTEGER, -- 자본적지출(억) CAPEX
     fcf INTEGER, -- 잉여현금흐름(억) FCF
 
-    opearting_profit_margin NUMERIC(6, 2), -- 영업이익률(%) OPM
-    net_profit_margin NUMERIC(6, 2), -- 순이익률(%) NPM
+    operating_profit_margin NUMERIC(10, 2), -- 영업이익률(%) OPM
+    net_profit_margin NUMERIC(10, 2), -- 순이익률(%) NPM
 
-    roe NUMERIC(6, 2), -- 자기자본순이익률(%) ROE
-    roa NUMERIC(6, 2), -- 총자본순이익률(%) ROA
-
+    roe NUMERIC(10, 2), -- 자기자본순이익률(%) ROE
+    roa NUMERIC(10, 2), -- 총자본순이익률(%) ROA
     debt_to_equity_ratio NUMERIC(10, 2), -- 부채비율(%)
     reserve_ratio NUMERIC(10, 2), -- 유보율(%)
 
@@ -38,8 +37,8 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     pbr NUMERIC(10, 2), -- 주가순자산비율(배) PBR
 
     dps INTEGER, -- 현금 DPS (원)
-    dividend_yield NUMERIC(5, 2), -- 현금배당수익률(%)
-    payout_ratio NUMERIC(15, 2), -- 현금배당성향(%)
+    dividend_yield NUMERIC(10, 2), -- 현금배당수익률(%)
+    payout_ratio NUMERIC(10, 2), -- 현금배당성향(%)
 
     -- 데이터 생성 및 업데이트 타임스탬프
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -64,7 +63,7 @@ COMMENT ON COLUMN financial_indicators.cash_flow_from_investing IS '투자활동
 COMMENT ON COLUMN financial_indicators.cash_flow_from_financing IS '재무활동현금흐름(억 원)';
 COMMENT ON COLUMN financial_indicators.capex IS '자본적지출(억 원)';
 COMMENT ON COLUMN financial_indicators.fcf IS '잉여현금흐름(억 원)';
-COMMENT ON COLUMN financial_indicators.opearting_profit_margin IS '영업이익률(%)';
+COMMENT ON COLUMN financial_indicators.operating_profit_margin IS '영업이익률(%)';
 COMMENT ON COLUMN financial_indicators.net_profit_margin IS '순이익률(%)';
 COMMENT ON COLUMN financial_indicators.roe IS '자기자본순이익률(%)';
 COMMENT ON COLUMN financial_indicators.roa IS '총자본순이익률(%)';
