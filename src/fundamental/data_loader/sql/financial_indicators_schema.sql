@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
     capex INTEGER, -- 자본적지출(억) CAPEX
     fcf INTEGER, -- 잉여현금흐름(억) FCF
 
-    opearting_profit_margin NUMERIC(5, 2), -- 영업이익률(%) OPM
-    net_profit_margin NUMERIC(5, 2), -- 순이익률(%) NPM
+    opearting_profit_margin NUMERIC(6, 2), -- 영업이익률(%) OPM
+    net_profit_margin NUMERIC(6, 2), -- 순이익률(%) NPM
 
-    roe NUMERIC(5, 2), -- 자기자본순이익률(%) ROE
-    roa NUMERIC(5, 2), -- 총자본순이익률(%) ROA
+    roe NUMERIC(6, 2), -- 자기자본순이익률(%) ROE
+    roa NUMERIC(6, 2), -- 총자본순이익률(%) ROA
 
     debt_to_equity_ratio NUMERIC(10, 2), -- 부채비율(%)
     reserve_ratio NUMERIC(10, 2), -- 유보율(%)
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS financial_indicators (
 
     dps INTEGER, -- 현금 DPS (원)
     dividend_yield NUMERIC(5, 2), -- 현금배당수익률(%)
-    payout_ratio NUMERIC(5, 2), -- 현금배당성향(%)
+    payout_ratio NUMERIC(15, 2), -- 현금배당성향(%)
 
     -- 데이터 생성 및 업데이트 타임스탬프
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
