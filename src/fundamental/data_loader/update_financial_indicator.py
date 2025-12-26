@@ -255,6 +255,11 @@ def process_company_financials(company_dict, corp_list, start_year=2024):
             # 기준: 1,000만 원 초과 시 당기순이익 혼입 등 오류로 간주
             if abs(eps) > 10000000:
                 eps = 0
+
+            # reserve_ratio가 3억 % 이상이면 0으로 초기화 (비정상치 방어)
+            if abs(reserve_ratio) > 300000000:
+                reserve_ratio = 0
+                
             
             bps = 0
             if eps and ni:
@@ -380,7 +385,7 @@ def update_financial_data():
     logger.info("🚀 데이터베이스 업데이트 프로세스 시작")
 
     # 상위 기업 리스트 가져오기
-    top_companies_df = get_top_companies(limit=100) 
+    top_companies_df = get_top_companies(limit=200) 
     
     if top_companies_df.empty:
         logger.error("기업 목록 로드 실패")
