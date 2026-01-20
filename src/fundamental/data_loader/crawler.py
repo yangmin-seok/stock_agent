@@ -6,7 +6,28 @@ import numpy as np
 from typing import List, Dict, Optional, Any
 import logging
 from pykrx import stock
+from pykrx.website.comm import webio  # 패치를 위해 추가
 from datetime import datetime
+
+# --- [해결책] pykrx 400 에러 및 빈 프레임 반환 패치 ---
+def _patched_get_read(self, **params):
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd"
+    }
+    return requests.get(self.url, headers=headers, params=params)
+
+def _patched_post_read(self, **params):
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd"
+    }
+    return requests.post(self.url, headers=headers, data=params)
+
+# 기존 메서드를 새 메서드로 교체
+webio.Get.read = _patched_get_read
+webio.Post.read = _patched_post_read
+# --------------------------------------------------
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -15,45 +36,54 @@ logger = logging.getLogger(__name__)
 def get_top_companies(limit: int = 200) -> pd.DataFrame:
     """
     KOSPI와 KOSDAQ에서 시가총액 상위 `limit`개의 종목 정보를 가져옵니다.
-
-    Outputs:
-        pd.DataFrame: 'company_name', 'company_code', 'exchange', 'market_cap' 컬럼을 포함한 데이터프레임
     """
-
-    #today = datetime.now().strftime('%Y%d%m')
+    # 20251010은 금요일로 정상 영업일입니다.
     today = "20251010"
 
     try:
         # KOSPI 종목 정보
-        df_kospi = stock.get_market_cap_by_ticker(today, market='KOSPI').iloc[:limit]
+        df_kospi = stock.get_market_cap_by_ticker(today, market='KOSPI')
+        
+        # 데이터가 비어있는지 확인하는 로직 추가 (안전장치)
+        if df_kospi.empty:
+            logger.error("KOSPI 데이터를 가져오지 못했습니다. 날짜나 연결 상태를 확인하세요.")
+            return pd.DataFrame()
+            
+        df_kospi = df_kospi.iloc[:limit]
         df_kospi['exchange'] = 'KOSPI'
 
         # KOSDAQ 종목 정보
-        df_kosdaq = stock.get_market_cap_by_ticker(today, market='KOSDAQ').iloc[:limit]
+        df_kosdaq = stock.get_market_cap_by_ticker(today, market='KOSDAQ')
+        
+        if df_kosdaq.empty:
+            logger.error("KOSDAQ 데이터를 가져오지 못했습니다.")
+            return pd.DataFrame()
+
+        df_kosdaq = df_kosdaq.iloc[:limit]
         df_kosdaq['exchange'] = 'KOSDAQ'
+        
     except Exception as e:
         logger.error(f"pykrx를 통해 종목 정보를 가져오는 중 오류 발생: {e}")
         return pd.DataFrame()
 
     df = pd.concat([df_kospi, df_kosdaq])
-    df = df.sort_values(by='시가총액', ascending=False)
+    
+    # 컬럼 존재 여부 확인 후 정렬
+    if '시가총액' in df.columns:
+        df = df.sort_values(by='시가총액', ascending=False)
+    else:
+        logger.error("데이터에 '시가총액' 컬럼이 없습니다.")
+        return pd.DataFrame()
 
-    # 인덱스(종목코드)를 리셋하고 'company_code' 컬럼으로 만듭니다.
     df = df.reset_index()
-    df = df.rename(columns={'티커': 'company_code'})
-    df = df.rename(columns={'시가총액': 'market_cap'})
+    df = df.rename(columns={'티커': 'company_code', '시가총액': 'market_cap'})
 
-    # 종목명을 빠르게 추가합니다.
+    # 종목명 추가
     df['company_name'] = df['company_code'].map(lambda x: stock.get_market_ticker_name(x))
-
-    # market_cap / 1억
-    df['market_cap'] = df['market_cap'].apply(lambda x: x // 100000000)
-
-    # 최종적으로 필요한 컬럼만 선택하고 순서를 정리합니다.
+    df['market_cap'] = df['market_cap'] // 100000000
     df = df[['company_name', 'company_code', 'exchange', 'market_cap']]
 
     logger.info(f"✅ 시가총액 상위 {len(df)}개 종목 정보를 성공적으로 가져왔습니다.")
-
     return df
 
 def crawl_financial_year_data(company: Dict[str, Any]) -> Optional[pd.DataFrame]:

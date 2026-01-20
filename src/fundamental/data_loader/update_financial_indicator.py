@@ -385,7 +385,7 @@ def update_financial_data():
     logger.info("🚀 데이터베이스 업데이트 프로세스 시작")
 
     # 상위 기업 리스트 가져오기
-    top_companies_df = get_top_companies(limit=200) 
+    top_companies_df = get_top_companies(limit=2000) 
     
     if top_companies_df.empty:
         logger.error("기업 목록 로드 실패")
